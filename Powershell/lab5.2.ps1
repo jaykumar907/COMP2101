@@ -1,147 +1,75 @@
 
 $input = Read-Host -Prompt "What information do you require ?"
 
-if ($input -eq "system") {
+if ($input -eq "osinfo") {
 
-"**System Information**"
+Write-host "Operating System Description"
+ get-wmiobject -class Win32_OperatingSystem | fl Name, Version
 
-
-
-    Get-WmiObject win32_computersystem
-
-
-
-"**OS Information**
-
-"
-
-
-
-    Get-WmiObject -Class win32_operatingsystem |
-        foreach {
-            New-Object -TypeName psobject -Property @{
-                OSName = $_.Name
-                Version = $_.Version
-                }
-        } 
-        ft -AutoSize OsName,
-                     Version
-
-
-"**Video Card Information**
-
-"
-
-
-
-    Get-WmiObject -Class win32_videocontroller |
-        foreach {
-            New-Object -TypeName psobject -Property @{
-                Vendor = $_.Name
-                Description = $_.Description
-                CurrentScreenResolution = ($_.CurrentHorizontalResolution) * ($_.CurrentVerticalResolution)
-                
-                }
-        } 
-
-
-"**RAM information**"
-
-
-    $totalCapacity = 0
-
-    Get-WmiObject -Class win32_physicalmemory |
-        foreach {
-            New-Object -TypeName psobject -Property @{
-                Vendor = $_.Manufacturer
-                Model = "data unavailable"
-                "Size(MB)" = $_.capacity/1mb
-                Bank = $_.banklabel
-                Slot = $_.devicelocator
-                }
-            $totalCapacity += $_.capacity/1mb
-        } |
-            ft -auto Vendor,
-                      Model,
-                     "Size(MB)",
-                      Bank,
-                      Slot
-
-      "Total RAM: ${totalCapacity}MB
-      
-      "
 }
 
-elseif ($input -eq "disks") {
+elseif ($input -eq "cpuinfo") {
+Write-host "System Processor Description"
+ get-wmiobject -class win32_processor | fl Description, CurrentClockSpeed, NumberOfCores, @{n="L1CacheSize";e={switch($_.L1CacheSize){$null{$empty="data unavailable"}};$empty}}, L2CacheSize, L3CacheSize
+}
 
-"**Disk Information**
+  elseif ($input -eq "raminfo") {
+Write-host "RAM Description"
+$sum = 0
+get-wmiobject -class win32_physicalmemory |
+  foreach { 
+    New-Object -TypeName psObject -Property @{ 
+      Vendor = $_.Manufacturer
+      Description = $_.Description
+     "Size(GB)" = $_.Capacity/1gb
+     "Speed(Mhz)" = $_.ConfiguredClockSpeed
+      Bank = $_.BankLabel
+      Slot = $_.DeviceLocator
+      }
+      $sum += $_.capacity/1gb
+      }|
+ft Vendor, Description, "Size(GB)", "Speed(Mhz)", Bank, Slot
+"Total RAM: ${sum}GB"
+}
 
-"
+elseif ($input -eq "diskinfo") {
 
-
-
-        $diskdrives = Get-CIMInstance CIM_diskdrive
-
-  foreach ($disk in $diskdrives) {
-      $partitions = $disk|get-cimassociatedinstance -resultclassname CIM_diskpartition
-      foreach ($partition in $partitions) {
-            $logicaldisks = $partition | get-cimassociatedinstance -resultclassname CIM_logicaldisk
-            foreach ($logicaldisk in $logicaldisks) {
-                     new-object -typename psobject -property @{Vendor=$disk.Manufacturer
-                                                               Model=$disk.Model
-                                                               "SizeFree(GB)"=$logicaldisks.FreeSpace / 1gb -as [int]
-                                                               "SpaceFree(%)"=($logicaldisk.FreeSpace/$logicaldisk.size)*100 -as [int]
-                                                               "Size(GB)"=$logicaldisk.size / 1gb -as [int]
-                                                               } | ft
+write-host "Disk Drive Description"
+$diskdrives = Get-CimInstance -class CIM_diskdrive
+foreach ($disk in $diskdrives) {
+    $partitions = $disk|get-cimassociatedinstance -resultclassname CIM_diskpartition
+    foreach ($partition in $partitions) {
+          $logicaldisks = $partition | get-cimassociatedinstance -resultclassname CIM_logicaldisk
+          foreach ($logicaldisk in $logicaldisks) {
+             new-object -typename psobject -property @{
+               Vendor = $disk.Manufacturer
+               Model = $disk.Model
+               Drive = $logicaldisk.deviceid
+               "Size(GB)" = $logicaldisk.size / 1gb -as [int]
+               "freeSpace(GB)" = $logicaldisk.freespace/1gb -as [int]
+               "freeSpace(%)" = ([string]((($logicalDisk.FreeSpace / $logicalDisk.Size) * 100) -as [int]) + '%')} | ft Drive, Vendor, Model, "Size(GB)", "freespace(GB)", "freeSpace(%)"
            }
       }
   }
 
-  }
+}
 
-  elseif ($input -eq "network") {
+elseif ($input -eq "adapterinfo"){
+ Write-host "Network Adapter Description"
+  get-wmiobject -class win32_networkadapterconfiguration |
+  ft Index, IPAddress, IPSubnet, Description,
+  @{n="DNSDomain";e={switch($_.DNSDomain){$null{$empty="data unavailable";$empty}};if($null -ne $_.DNSDomain){$_.DNSDomain}}},
+  @{n="DNSServerSearchOrder";e={switch($_.DNSServerSearchOrder){$null{$empty="data unavailable";$empty}};if($null -ne $_.DNSServerSearchOrder){$_.DNSServerSearchOrder}}}
 
-  "**Network Adapters** "
-
-
-
-  get-ciminstance win32_networkadapterconfiguration |
-     Where-Object ipenabled -eq True |
-     Select-Object Discription, index, IPAddress, subnetmask, dnsdomain, dnsserver
-        ft
 
 }
+
 
 else {
 
-"**Processor Information ** 
-
-"
-
-
-
-    Get-WmiObject -Class win32_processor |
-        foreach {
-            New-Object -TypeName psobject -Property @{
-                Speed = $_.MaxClockSpeed
-                NumberOfCores = $_.NumberOfCores
-                L1CacheSize = "data unavailable"
-                L2CacheSize = "data unavailable"
-                L3CacheSize = $_.L3CacheSize
-                }
-        } 
-        ft -AutoSize Speed,
-                     NumberOfCores,
-                     L1CacheSize,
-                     L2CacheSize,
-                     L3CacheSize
-
-                     "
-                     "
-
-
+Write-host "Graphics Card Description"
+  $hpixels = (get-wmiobject -class Win32_videocontroller).CurrentHorizontalResolution -as [String]
+  $vpixels = (gwmi -classNAME win32_videocontroller).CurrentVerticalresolution -as [string]
+  $resolution = $hpixels + " x " + $vpixels
+  gwmi -classNAME win32_videocontroller| fl @{n = "Video Card Vendor"; e={$_.AdapterCompatibility}}, Description, @{n="Screen Resolution"; e={$resolution -as [string]}}
 }
-
-
-  
-
